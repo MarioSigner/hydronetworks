@@ -13,8 +13,8 @@ import rasterio
 import geopandas as gpd
 import pyproj
 
-from .streamorder import shreve
-from .runoff import rainfall_runoff, discharge
+#from .streamorder import shreve
+#from .runoff import rainfall_runoff, discharge
 
 class HydroNetworks:
     """
@@ -22,7 +22,7 @@ class HydroNetworks:
     """
 
 
-    def __init__(self, rivers_path, dem_path, flow_path, flowacc_path):
+    def __init__(self, rivers_path, dem_path, flow_path, flowacc_path, sel_proj):
         """
 
         """
@@ -31,6 +31,7 @@ class HydroNetworks:
         self.dem_path = dem_path
         self.flow_path = flow_path
         self.flowacc_path = flowacc_path
+        self.sel_proj = sel_proj
 
 
     def load_files(self):
@@ -40,8 +41,8 @@ class HydroNetworks:
 
         self.rivers = gpd.read_file(self.rivers_path)
         
-        # project rivers to Mercator for distances and integer positioning
-        self.rivers = self.rivers.to_crs(epsg=3395)
+        # project rivers to selected projection system for distances and integer positioning
+        self.rivers = self.rivers.to_crs(self.sel_proj)
 
         self.dem = rasterio.open(self.dem_path)
         self.flow = rasterio.open(self.flow_path)
