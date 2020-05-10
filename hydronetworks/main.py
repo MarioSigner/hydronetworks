@@ -63,13 +63,19 @@ class HydroNetworks:
         if not os.path.exists(path):
             os.makedirs(path)
 
-        rivers_path = path / 'rivers_out.gpkg'
-        nodes_path = path / 'nodes_out.gpkg'
+        #rivers_path = path / 'rivers_out.gpkg'
+        #nodes_path = path / 'nodes_out.gpkg'
         hydro_path = path / 'hydro_points.gpkg'
+        mns_path = path / 'mini_and_small_hydro_points.gpkg'
+        mini_path = path / 'mini_hydro_points.gpkg'
+        small_path = path / 'small_hydro_points.gpkg'
 
-        self.rivers_out.to_file(rivers_path, driver='GPKG')
-        self.nodes_out.drop('arcs', axis=1).to_file(nodes_path, driver='GPKG')
+        #self.rivers_out.to_file(rivers_path, driver='GPKG')
+        #self.nodes_out.drop('arcs', axis=1).to_file(nodes_path, driver='GPKG')
         self.hydro_points.to_file(hydro_path, driver='GPKG')
+        self.mini_and_small_hydro.to_file(mns_path, driver='GPKG')
+        self.mini_hydro.to_file(mini_path, driver='GPKG')
+        self.small_hydro.to_file(small_path, driver='GPKG')
 
 
     def river_selection(self, cut_off_val):
