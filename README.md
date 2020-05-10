@@ -49,11 +49,6 @@ With the environment activated, you can now move to the hydronetworks directory 
 ..\hydronetworks> jupyter notebook 
 ```
 
-
-You can run ```make test``` in the directory, which will do an entire run through using the test data and confirm whether everything is set up properly.
-
-
-
 ## Credits
 
 **Original code:** [Chris Arderne](https://github.com/carderne) <br />
