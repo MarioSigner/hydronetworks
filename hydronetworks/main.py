@@ -22,7 +22,7 @@ class HydroNetworks:
     """
 
 
-    def __init__(self, rivers_path, dem_path, flow_path, flowacc_path, sel_proj):
+    def __init__(self, rivers_path, dem_path, flow_path, flowacc_path, admin_path, sel_proj):
         """
 
         """
@@ -31,6 +31,7 @@ class HydroNetworks:
         self.dem_path = dem_path
         self.flow_path = flow_path
         self.flowacc_path = flowacc_path
+        self.admin_path = admin_path
         self.sel_proj = sel_proj
 
 
@@ -40,13 +41,15 @@ class HydroNetworks:
         """
 
         self.rivers = gpd.read_file(self.rivers_path)
-        
-        # project rivers to selected projection system for distances and integer positioning
-        self.rivers = self.rivers.to_crs(self.sel_proj)
+        self.admin = gpd.read_file(self.admin_path)
+
+        ## project rivers to selected projection system for distances and integer positioning
+        self.rivers = self.rivers.to_crs({'init': self.sel_proj})
+        self.admin = self.admin.to_crs({'init': self.sel_proj})
 
         self.dem = rasterio.open(self.dem_path)
-        self.flow = rasterio.open(self.flow_path)
-        self.flowacc = rasterio.open(self.flowacc_path)
+        #self.flow = rasterio.open(self.flow_path)
+        #self.flowacc = rasterio.open(self.flowacc_path)
 
 
     def save_results(self, path):
@@ -67,6 +70,17 @@ class HydroNetworks:
         self.rivers_out.to_file(rivers_path, driver='GPKG')
         self.nodes_out.drop('arcs', axis=1).to_file(nodes_path, driver='GPKG')
         self.hydro_points.to_file(hydro_path, driver='GPKG')
+
+
+    def river_selection(self, cut_off_val):
+        """
+        Selecting rivers based on their Strahler number; Strahler number above 3 is a proxy for perennial flow
+        and is used here based on publication's narrative.
+        :return: the river geo-dataframe with selected rivers
+        """
+        self.rivers = self.rivers.loc[self.rivers['ORD_STRA'] >= cut_off_val]
+
+        print('River network selected based on Strahler order')
 
 
     def create_network(self):
@@ -172,7 +186,7 @@ class HydroNetworks:
 
         """
 
-        proj = pyproj.Proj(init='epsg:3395')  # Mercator
+        proj = pyproj.Proj(init=self.sel_proj)
         for node in self.nodes:
             node_proj = proj(*node[1:3], inverse=True)
             
@@ -240,6 +254,7 @@ class HydroNetworks:
 
         self.nodes_out = rainfall_runoff(self.nodes_out, kc_path)
 
+
     def calculate_dischange(self):
         """
 
@@ -273,13 +288,14 @@ class HydroNetworks:
         # 1 degree = 110704 metres -> 1 minute = 1845 metres -> 1 second = 30.75 metres
         # River network is 15 second resolution = 461 metres
         # Therefore each up_cell size is
-        cell_area = (110704/60/60*15)**2
-        proj = pyproj.Proj(init='epsg:3395')  # Mercator
-        rivers = self.rivers.to_crs(epsg=3395)
+        #cell_area = (110704/60/60*15)**2
+        proj = pyproj.Proj(init=self.sel_proj)
+        #rivers = self.rivers.to_crs(epsg=3395)
+        rivers = self.rivers
 
         rho = 998.57  # density of water, kg/m3
         g = 9.81  # acceleration due to gravity, m/2
-        n = 0.5  # overall efficiency of system
+        n = 0.5  # overall efficiency of system (eta_t=0.88 * eta_g=0.96 * conv=0.6 = 0.5)
 
         hydro_points_dicts = []
         count = 0
@@ -287,8 +303,8 @@ class HydroNetworks:
             geom = shape(row['geometry'])
             length = geom.length
             for _, distance in enumerate(range(0, int(length), interval)):
-                arcid = row['arcid']
-                up_cells = row['up_cells']
+                arcid = row['HYRIV_ID']
+                #up_cells = row['up_cells']
                 
                 point = Point(proj(*list(geom.interpolate(distance).coords)[0], inverse=True))
                 upstream_point = Point(proj(*list(geom.interpolate(distance - head_distance).coords)[0], inverse=True))
@@ -297,13 +313,14 @@ class HydroNetworks:
                 upstream_elevation = next(self.dem.sample(list(upstream_point.coords))).tolist()[0]
                 head = upstream_elevation - elevation
                 
-                runoff = next(self.flow.sample(list(point.coords))).tolist()[0]
-                flowrate = runoff * up_cells * cell_area * (1/1000) * (1/(8760*3600))  # convert mm/year to m3/s
-                
+                #runoff = next(self.flow.sample(list(point.coords))).tolist()[0]
+                #flowrate = runoff * up_cells * cell_area * (1/1000) * (1/(8760*3600))  # convert mm/year to m3/s
+                flowrate = row["DIS_AV_CMS"]
+
                 power = rho*g*n*flowrate*head
                 
                 if head > 0 and flowrate > 0:
-                    hydro_points_dicts.append({'arcid': arcid, 'elevation': elevation, 'head': head,
+                    hydro_points_dicts.append({'HYRIV_ID': arcid, 'elevation': elevation, 'head': head,
                                                'flowrate': flowrate, 'power': power, 'geometry': point})
                     
                 count += 1
@@ -340,3 +357,20 @@ class HydroNetworks:
             self.hydro_points['power_max'] = rho * g * eta_t * eta_g * conv * self.nodes_out['discharge_max'] * self.nodes_out['head']
             self.hydro_points['power_mean'] = rho * g * eta_t * eta_g * conv * self.nodes_out['discharge_mean'] * self.nodes_out['head']
             self.hydro_points['power_min'] = rho * g * eta_t * eta_g * conv * self.nodes_out['discharge_min'] * self.nodes_out['head']
+
+
+    def result_processor(self):
+        """
+                Extracts mini and small scale potential hydropower sites in different dataframes for further use
+                :return: Mini-hydro and Small-hydro geodataframes
+                """
+        # Power potential between 0.1-1 MW
+        self.mini_hydro = self.hydro_points[(self.hydro_points['power'] >= 100000) & (self.hydro_points['power'] <= 1000000)]
+
+        # Power potential between 1-10 MW
+        self.small_hydro = self.hydro_points[(self.hydro_points['power'] >= 1000001) & (self.hydro_points['power'] <= 10000000)]
+
+        # M&S hydro potential between 0.11-10 MW
+        self.mini_and_small_hydro = self.hydro_points[(self.hydro_points['power'] >= 100000) & (self.hydro_points['power'] <= 10000000)]
+
+        print('Results processed!')
