@@ -40,7 +40,7 @@ conda env create --name agrodem_run --file hydropotentialenv.ylm
 This might take a while.. When complete, activate the virtual environment using:
 
 ```
-conda activate hydropowerenv
+conda activate hydropotentialenv
 ```
 
 With the environment activated, you can now move to the hydronetworks directory and start a "jupyter notebook" session by simply typing:
